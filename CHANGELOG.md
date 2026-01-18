@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.7.0] - 2026-01-18
+
+### Added
+
+- **Remote HTTP Bridge** - New `comet-bridge` server for accessing Comet from remote machines (Linux, n8n)
+  - Token-based authentication via `COMET_BRIDGE_TOKEN` environment variable
+  - REST API endpoints: `/health`, `/tools`, `/tool/:name`, `/rpc`
+  - JSON-RPC style interface for tool execution
+  - CORS support for web-based clients
+  - Configurable port and host binding
+- **Linux/n8n Support** - Remote access enables Linux machines to use Comet running on Windows/macOS
+- **New CLI command** - `npm run bridge` or `comet-bridge` binary for starting HTTP server
+- **Comprehensive documentation** - Added Remote HTTP Bridge section to README with n8n integration examples
+
+### Changed
+
+- Updated package.json with new `bridge` script and `comet-bridge` binary
+- Added `remote`, `http-bridge`, `n8n` keywords for discoverability
+
 ## [2.6.2] - 2026-01-11
 
 ### Fixed

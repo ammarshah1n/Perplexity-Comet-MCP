@@ -1,17 +1,19 @@
 {
   "name": "perplexity-comet-mcp",
-  "version": "2.6.2",
+  "version": "2.7.0",
   "mcpName": "io.github.RapierCraft/perplexity-comet-mcp",
   "description": "Production-grade MCP server bridging Claude Code with Perplexity Comet browser - Windows support, tab management, smart completion detection",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "perplexity-comet-mcp": "dist/index.js"
+    "perplexity-comet-mcp": "dist/index.js",
+    "comet-bridge": "dist/http-bridge.js"
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
+    "bridge": "node dist/http-bridge.js",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build"
   },
@@ -29,7 +31,10 @@
     "cdp",
     "chrome-devtools-protocol",
     "windows",
-    "wsl"
+    "wsl",
+    "remote",
+    "http-bridge",
+    "n8n"
   ],
   "author": "RapierCraft",
   "license": "MIT",

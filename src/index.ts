@@ -164,7 +164,7 @@ const TOOLS: Tool[] = [
 ];
 
 const server = new Server(
-  { name: "comet-bridge", version: "2.5.0" },
+  { name: "comet-bridge", version: "2.7.0" },
   { capabilities: { tools: {} } }
 );
 

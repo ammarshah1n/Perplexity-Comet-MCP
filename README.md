@@ -5,7 +5,7 @@
 [![Node.js Version](https://img.shields.io/node/v/perplexity-comet-mcp.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20WSL-lightgrey.svg)]()
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20WSL%20%7C%20Remote-lightgrey.svg)]()
 
 A production-grade MCP (Model Context Protocol) server that bridges Claude Code with Perplexity's Comet browser for autonomous web browsing, research, and multi-tab workflow management.
 
@@ -42,6 +42,7 @@ This is a significantly enhanced fork of [hanzili/comet-mcp](https://github.com/
 | **Auto-Reconnect** | Exponential backoff recovery from connection drops |
 | **One-Shot Reliability** | Pre-operation health checks for consistent execution |
 | **Agentic Auto-Trigger** | Automatically triggers browser actions from natural prompts |
+| **Remote HTTP Bridge** | Access Comet from remote Linux/n8n via HTTP API |
 
 ---
 
@@ -107,6 +108,133 @@ Add to your Claude Code MCP settings (`~/.claude/settings.json` or VS Code setti
       "args": ["C:\\Users\\YourName\\perplexity-comet-mcp\\dist\\index.js"]
     }
   }
+}
+```
+
+---
+
+## Remote HTTP Bridge (Linux/n8n Support)
+
+Since Comet browser only runs on Windows/macOS, you can use the HTTP bridge to access it from Linux machines running n8n or other automation tools.
+
+### Architecture
+
+```
+Linux Machine (n8n)                    Windows/macOS (Comet Host)
+┌──────────────────┐                  ┌────────────────────────┐
+│  n8n / HTTP      │                  │  comet-bridge server   │
+│  Client          │ ─── HTTP ───────►│  (port 3210)           │
+└──────────────────┘                  │         │              │
+                                      │         ▼ CDP          │
+                                      │  Comet Browser         │
+                                      │  (localhost:9223)      │
+                                      └────────────────────────┘
+```
+
+### Quick Start
+
+**1. On Windows/macOS (Comet host):**
+
+```bash
+# Set a secure token
+export COMET_BRIDGE_TOKEN="your-secret-token-here"
+
+# Start the HTTP bridge
+npm run bridge
+# or
+node dist/http-bridge.js
+```
+
+**2. From Linux/n8n:**
+
+```bash
+# Test connection
+curl http://windows-ip:3210/health
+
+# Connect to Comet
+curl -X POST http://windows-ip:3210/rpc \
+  -H "Authorization: Bearer your-secret-token-here" \
+  -H "Content-Type: application/json" \
+  -d '{"method": "comet_connect"}'
+
+# Ask a question
+curl -X POST http://windows-ip:3210/rpc \
+  -H "Authorization: Bearer your-secret-token-here" \
+  -H "Content-Type: application/json" \
+  -d '{"method": "comet_ask", "params": {"prompt": "What is the weather today?"}}'
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `COMET_BRIDGE_TOKEN` | **Required.** Authentication token | - |
+| `COMET_BRIDGE_PORT` | Port to listen on | 3210 |
+| `COMET_BRIDGE_HOST` | Host to bind to | 0.0.0.0 |
+
+### API Endpoints
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/health` | GET | No | Health check |
+| `/tools` | GET | Yes | List available tools |
+| `/tool/:name` | POST | Yes | Execute a tool by name |
+| `/rpc` | POST | Yes | JSON-RPC style endpoint |
+
+### JSON-RPC Format
+
+```json
+{
+  "method": "comet_ask",
+  "params": {
+    "prompt": "Search for Python tutorials",
+    "newChat": true,
+    "timeout": 60000
+  }
+}
+```
+
+### n8n Integration Example
+
+In n8n, use an HTTP Request node:
+
+1. **Method:** POST
+2. **URL:** `http://your-windows-ip:3210/rpc`
+3. **Headers:**
+   - `Authorization`: `Bearer your-secret-token`
+   - `Content-Type`: `application/json`
+4. **Body:**
+```json
+{
+  "method": "comet_ask",
+  "params": {
+    "prompt": "{{ $json.query }}"
+  }
+}
+```
+
+### Security Considerations
+
+- **Token-based auth** - All API calls (except `/health`) require the token
+- **Bind to specific IP** - Use `COMET_BRIDGE_HOST=192.168.1.x` to restrict access
+- **Firewall** - Only allow trusted IPs to access port 3210
+- **Optional TLS** - Put nginx/envoy in front for HTTPS if exposing to internet
+
+### Optional: Add TLS with nginx
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name comet.yourdomain.com;
+
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3210;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
 }
 ```
 
@@ -468,7 +596,8 @@ npm test
 ```
 perplexity-comet-mcp/
 ├── src/
-│   ├── index.ts        # MCP server entry point
+│   ├── index.ts        # MCP server entry point (stdio)
+│   ├── http-bridge.ts  # HTTP bridge for remote access
 │   ├── cdp-client.ts   # CDP connection management
 │   ├── comet-ai.ts     # AI interaction logic
 │   └── types.ts        # TypeScript definitions
