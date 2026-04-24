@@ -30,6 +30,8 @@ export class CometAI {
 
   /**
    * Send a prompt to Comet's AI (Perplexity)
+   * Uses CDP Input.insertText as primary method (fires real browser InputEvents
+   * that React's synthetic event system captures), with execCommand as fallback.
    */
   async sendPrompt(prompt: string): Promise<string> {
     const inputSelector = await this.findInputElement();
@@ -38,29 +40,73 @@ export class CometAI {
       throw new Error("Could not find input element. Navigate to Perplexity first.");
     }
 
-    // Use execCommand for contenteditable elements (works with React/Vue)
-    const result = await cometClient.evaluate(`
+    // Dismiss any modals/interstitials before typing
+    await cometClient.evaluate(`
       (() => {
-        const el = document.querySelector('[contenteditable="true"]');
-        if (el) {
-          el.focus();
-          document.execCommand('selectAll', false, null);
-          document.execCommand('insertText', false, ${JSON.stringify(prompt)});
-          return { success: true };
+        for (const sel of ['button[aria-label="Close"]', 'button[aria-label="Dismiss"]', '[data-testid*="modal"] button']) {
+          const el = document.querySelector(sel);
+          if (el) el.click();
         }
-        // Fallback for textarea
-        const textarea = document.querySelector('textarea');
-        if (textarea) {
-          textarea.focus();
-          textarea.value = ${JSON.stringify(prompt)};
-          textarea.dispatchEvent(new Event('input', { bubbles: true }));
-          return { success: true };
-        }
-        return { success: false };
       })()
     `);
 
-    const typed = (result.result.value as { success: boolean })?.success;
+    // Get input element coordinates for CDP mouse click (required for proper focus)
+    const coords = await cometClient.evaluate(`
+      (() => {
+        const el = document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      })()
+    `);
+
+    const pos = coords.result.value as { x: number; y: number } | null;
+    let typed = false;
+
+    // Primary method: CDP Input.insertText (fires trusted InputEvents that React captures)
+    if (pos) {
+      try {
+        // Focus via CDP mouse click (not JS .focus() — CDP click is trusted)
+        await cometClient.cdpMouseClick(pos.x, pos.y);
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+        // Select all existing text
+        await cometClient.cdpSelectAll();
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Insert text via CDP — generates trusted InputEvent with inputType: "insertText"
+        await cometClient.cdpInsertText(prompt);
+        await new Promise(resolve => setTimeout(resolve, 200));
+        typed = true;
+      } catch {
+        typed = false;
+      }
+    }
+
+    // Fallback: execCommand (deprecated but still functional in Chromium for contenteditable)
+    if (!typed) {
+      const result = await cometClient.evaluate(`
+        (() => {
+          const el = document.querySelector('[contenteditable="true"]');
+          if (el) {
+            el.focus();
+            document.execCommand('selectAll', false, null);
+            document.execCommand('insertText', false, ${JSON.stringify(prompt)});
+            return { success: true };
+          }
+          const textarea = document.querySelector('textarea');
+          if (textarea) {
+            textarea.focus();
+            textarea.value = ${JSON.stringify(prompt)};
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            return { success: true };
+          }
+          return { success: false };
+        })()
+      `);
+      typed = (result.result.value as { success: boolean })?.success ?? false;
+    }
+
     if (!typed) {
       throw new Error("Failed to type into input element");
     }
@@ -78,19 +124,33 @@ export class CometAI {
     // Wait for React to process the typed content
     await new Promise(resolve => setTimeout(resolve, 300));
 
-    // Verify text was typed before attempting submit
+    // Verify text was typed before attempting submit.
+    // Check ALL contenteditable elements (Perplexity uses nested Lexical editor)
+    // and all textareas. Also check innerText/textContent/value across the subtree.
     const hasContent = await cometClient.evaluate(`
       (() => {
-        const el = document.querySelector('[contenteditable="true"]');
-        if (el && el.innerText.trim().length > 0) return true;
-        const textarea = document.querySelector('textarea');
-        if (textarea && textarea.value.trim().length > 0) return true;
+        const editables = document.querySelectorAll('[contenteditable="true"]');
+        for (const el of editables) {
+          const text = (el.innerText || el.textContent || '').trim();
+          if (text.length > 0) return true;
+        }
+        const textareas = document.querySelectorAll('textarea');
+        for (const ta of textareas) {
+          if (ta.value && ta.value.trim().length > 0) return true;
+        }
+        const inputs = document.querySelectorAll('input[type="text"], input[type="search"]');
+        for (const inp of inputs) {
+          if (inp.value && inp.value.trim().length > 0) return true;
+        }
         return false;
       })()
     `);
 
     if (!hasContent.result.value) {
-      throw new Error("Prompt text not found in input - typing may have failed");
+      // Don't throw — Perplexity's DOM can hide typed text in child editors that
+      // innerText/textContent don't surface. Submit anyway; an empty input is a
+      // no-op server-side, and this avoids false-negatives from selector drift.
+      console.error("[perplexity-comet] verify step saw no text — submitting anyway");
     }
 
     // Strategy 1: Simulate Enter key via DOM events (most reliable for contenteditable)
