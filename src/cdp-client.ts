@@ -1151,6 +1151,41 @@ export class CometCDPClient {
   }
 
   /**
+   * CDP mouse click at coordinates (trusted event — required for proper focus on contenteditable)
+   */
+  async cdpMouseClick(x: number, y: number): Promise<void> {
+    this.ensureConnected();
+    await this.client!.Input.dispatchMouseEvent({
+      type: 'mousePressed', x, y, button: 'left', clickCount: 1,
+    });
+    await this.client!.Input.dispatchMouseEvent({
+      type: 'mouseReleased', x, y, button: 'left', clickCount: 1,
+    });
+  }
+
+  /**
+   * CDP Select All (Cmd+A / Ctrl+A)
+   */
+  async cdpSelectAll(): Promise<void> {
+    this.ensureConnected();
+    const mod = platform() === 'darwin' ? 4 : 2; // 4=Meta(Cmd), 2=Ctrl
+    await this.client!.Input.dispatchKeyEvent({
+      type: 'keyDown', modifiers: mod, key: 'a', code: 'KeyA',
+      windowsVirtualKeyCode: 65,
+    });
+    await this.client!.Input.dispatchKeyEvent({ type: 'keyUp', key: 'a' });
+  }
+
+  /**
+   * CDP Insert Text — fires a trusted InputEvent that React's synthetic event system captures.
+   * This is the CDP-native equivalent of typing.
+   */
+  async cdpInsertText(text: string): Promise<void> {
+    this.ensureConnected();
+    await (this.client! as any).Input.insertText({ text });
+  }
+
+  /**
    * Create a new tab
    */
   async newTab(url?: string): Promise<CDPTarget> {

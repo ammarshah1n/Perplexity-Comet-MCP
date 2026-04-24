@@ -241,11 +241,13 @@ export class CometAI {
               const btnRect = btn.getBoundingClientRect();
               const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
 
-              // Skip mode/attach/voice/menu buttons
+              // Skip mode/attach/voice/menu buttons (including post-Feb 2026 labels)
               if (ariaLabel.includes('search') || ariaLabel.includes('research') ||
                   ariaLabel.includes('labs') || ariaLabel.includes('learn') ||
                   ariaLabel.includes('attach') || ariaLabel.includes('voice') ||
-                  ariaLabel.includes('menu') || ariaLabel.includes('more')) {
+                  ariaLabel.includes('menu') || ariaLabel.includes('more') ||
+                  ariaLabel.includes('option') || ariaLabel.includes('council') ||
+                  ariaLabel.includes('create files') || ariaLabel.includes('step by step')) {
                 continue;
               }
 
@@ -383,7 +385,14 @@ export class CometAI {
         const hasFinishedMarker = body.includes('Finished') && !hasActiveStopButton;
         const hasReviewedSources = /Reviewed \\d+ sources?/i.test(body);
         const hasSourcesIndicator = /\\d+\\s*sources?/i.test(body); // "10 sources" etc
-        const hasAskFollowUp = body.includes('Ask a follow-up') || body.includes('Ask follow-up');
+        const hasAskFollowUp = body.includes('Ask a follow-up') ||
+                               body.includes('Ask follow-up') ||
+                               body.includes('Continue the conversation');
+        // Deep Research specific completion signals (Feb 2026 UI)
+        const hasDeepResearchDone = /Deep research complete/i.test(body) ||
+                                     /Research complete/i.test(body) ||
+                                     body.includes('Export to PDF') ||
+                                     body.includes('Share report');
 
         // Check for prose content (actual response) - lowered threshold for short answers
         const proseEls = [...document.querySelectorAll('[class*="prose"]')];
@@ -400,7 +409,8 @@ export class CometAI {
           'Working', 'Searching', 'Reviewing sources', 'Preparing to assist',
           'Clicking', 'Typing:', 'Navigating to', 'Reading', 'Analyzing',
           'Browsing', 'Looking at', 'Checking', 'Opening', 'Scrolling',
-          'Waiting', 'Processing'
+          'Waiting', 'Processing',
+          'Running deep research', 'Synthesizing', 'Compiling report'
         ];
         const hasWorkingText = workingPatterns.some(p => body.includes(p));
 
@@ -415,7 +425,9 @@ export class CometAI {
         }
         // SECOND: Check completion indicators BEFORE working text
         // (because completed pages still show historical step text)
-        else if (hasStepsCompleted || hasFinishedMarker) {
+        else if (hasDeepResearchDone && hasProseContent) {
+          status = 'completed';
+        } else if (hasStepsCompleted || hasFinishedMarker) {
           status = 'completed';
         } else if (hasAskFollowUp && hasProseContent) {
           status = 'completed';
@@ -458,7 +470,7 @@ export class CometAI {
               afterMarker = afterMarker.replace(/^[>›→\\s]+/, '').trim();
 
               // Find where the response ends (before input area or UI elements)
-              const endMarkers = ['Ask anything', 'Ask a follow-up', 'Add details', 'Type a message'];
+              const endMarkers = ['Ask anything', 'Ask a follow-up', 'Ask follow-up', 'Add details', 'Type a message', 'Continue the conversation', 'Export to PDF', 'Share report'];
               let endIndex = afterMarker.length;
               for (const marker of endMarkers) {
                 const idx = afterMarker.indexOf(marker);
@@ -478,7 +490,7 @@ export class CometAI {
               const markerIndex = bodyText.indexOf(sourcesMatch[0]);
               if (markerIndex !== -1) {
                 let afterMarker = bodyText.substring(markerIndex + sourcesMatch[0].length).trim();
-                const endMarkers = ['Ask anything', 'Ask a follow-up', 'Add details'];
+                const endMarkers = ['Ask anything', 'Ask a follow-up', 'Ask follow-up', 'Add details', 'Continue the conversation', 'Export to PDF', 'Share report'];
                 let endIndex = afterMarker.length;
                 for (const marker of endMarkers) {
                   const idx = afterMarker.indexOf(marker);

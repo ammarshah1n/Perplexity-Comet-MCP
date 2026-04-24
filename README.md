@@ -510,6 +510,48 @@ This project is an enhanced fork of [comet-mcp](https://github.com/hanzili/comet
 
 ---
 
+## Perplexity UI Compatibility Notes
+
+Mode switching depends on Perplexity's DOM. As of Feb 2026, modes live in a **"+" popover panel** inside the input bar — the old mode-button group (`button[aria-label="Research"]`) is gone on most screen sizes. `src/index.ts` `comet_mode` tries the old button group first, then falls back to clicking the + button and matching the mode label regex (`/^(deep\s*research|research)$/i` for research, with similar matchers for the renamed Labs → "Create files and apps" and Learn → "Learn step by step").
+
+If `comet_mode` breaks again, connect to Comet, point it at `https://www.perplexity.ai/`, and run this discovery snippet via `cometClient.evaluate` to print the current input-bar button set and tune the selectors:
+
+```js
+(() => {
+  const out = { buttons: [] };
+  const input = document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
+  if (!input) return out;
+  let p = input.parentElement;
+  for (let i = 0; i < 8 && p; i++) {
+    for (const btn of p.querySelectorAll('button')) {
+      if (btn.offsetParent === null) continue;
+      out.buttons.push({
+        text: btn.innerText.trim().slice(0, 30),
+        aria: btn.getAttribute('aria-label') || '',
+        testId: btn.getAttribute('data-testid') || '',
+      });
+    }
+    p = p.parentElement;
+  }
+  return out;
+})()
+```
+
+**Deep Research** is the primary research tool. Prefer the dedicated `comet_deep_research` tool (default timeout 5 min) over `comet_mode('research')` + `comet_ask`, or pass `deepResearch: true` to `comet_ask`.
+
+**Completion detection** (see `src/comet-ai.ts` `getAgentStatus`) relies on DOM text patterns. If responses return empty:
+1. Confirm `[class*="prose"]` still exists on the response container.
+2. Check for new completion text (e.g. "Deep research complete", "Research complete", "Export to PDF", "Share report") and extend `hasDeepResearchDone`.
+3. Lower the prose content threshold (currently 15 chars) if Perplexity starts emitting short answers.
+
+**DOM selectors to verify after any Perplexity update:**
+- Input box: `[contenteditable="true"]` (stable)
+- Submit button: rightmost non-skipped button near input (usually stable — skip-list lives in `submitPrompt()`)
+- Mode panel: "+" button → popover → text match (brittle, monitor Perplexity changelog)
+- Completion: `Ask a follow-up`, `X steps completed`, `Reviewed X sources`, `Deep research complete`
+
+---
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
